@@ -29,16 +29,30 @@ def buscar_projetos():
                         r = requests.get(url_proj, headers=headers, timeout=10)
                         if TELEFONE_ALVO in r.text:
                             nome = link.get_text(strip=True)[:100]
-                            data_mod = "2026-02-01"
+                            
+                            # Tenta pegar a data
                             s = BeautifulSoup(r.text, "html.parser")
-                            tag = s.find("time") or s.find("span", class_="date")
+                            data_mod = "Data não encontrada"
+                            tag = s.find("time") or s.find("span", class_="date") or s.find("p", class_="date")
                             if tag and tag.get_text(strip=True):
                                 data_mod = tag.get_text(strip=True)
+
+                            # Tenta pegar a descrição (primeiro parágrafo ou meta description)
+                            descricao = ""
+                            meta_desc = s.find("meta", attrs={"name": "description"})
+                            if meta_desc:
+                                descricao = meta_desc["content"].strip()
+                            else:
+                                p = s.find("p")
+                                if p:
+                                    descricao = p.get_text(strip=True)[:300]
+
                             projetos.append({
                                 "id": url_proj.split("/")[-1],
                                 "nome": nome,
                                 "url": url_proj,
-                                "ultima_mod": data_mod
+                                "ultima_mod": data_mod,
+                                "descricao": descricao
                             })
                     except:
                         continue
@@ -47,12 +61,13 @@ def buscar_projetos():
     except:
         pass
 
+    # Lista de emergência caso o site mude
     if not projetos:
         projetos = [
-            {"id": "trf5", "nome": "TRF 5ª Região - Juiz Federal", "url": "https://conhecimento.fgv.br/concursos/trf5juiz", "ultima_mod": "2026-02-10"},
-            {"id": "enare", "nome": "ENARE", "url": "https://enare2026.conhecimento.fgv.br", "ultima_mod": "2026-02-10"},
-            {"id": "cfc", "nome": "Exame de Suficiência CFC", "url": "https://conhecimento.fgv.br/busca", "ultima_mod": "2026-02-10"},
-            {"id": "eqt", "nome": "Exame de Qualificação Técnica", "url": "https://conhecimento.fgv.br/busca", "ultima_mod": "2026-02-10"}
+            {"id": "trf5", "nome": "TRF 5ª Região - Juiz Federal", "url": "https://conhecimento.fgv.br/concursos/trf5juiz", "ultima_mod": "2026-02-10", "descricao": "Concurso Público para o Tribunal Regional Federal da 5ª Região."},
+            {"id": "enare", "nome": "ENARE", "url": "https://enare2026.conhecimento.fgv.br", "ultima_mod": "2026-02-10", "descricao": "Exame Nacional de Residência."},
+            {"id": "cfc", "nome": "Exame de Suficiência CFC", "url": "https://conhecimento.fgv.br/busca", "ultima_mod": "2026-02-10", "descricao": "Exame de Suficiência do Conselho Federal de Contabilidade."},
+            {"id": "eqt", "nome": "Exame de Qualificação Técnica", "url": "https://conhecimento.fgv.br/busca", "ultima_mod": "2026-02-10", "descricao": "Exame de Qualificação Técnica."}
         ]
     return projetos
 
@@ -61,7 +76,8 @@ def enviar_telegram(msg):
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     try:
-        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "Markdown"}, timeout=10)
+        # Parse_mode HTML para negrito
+        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "HTML"}, timeout=10)
     except:
         pass
 
@@ -85,13 +101,21 @@ def main():
     if not adicionados and not removidos and not alterados:
         enviar_telegram("✅ Nenhuma alteração identificada desde a última verificação.")
     else:
-        msg = "🚨 ALTERAÇÕES DETECTADAS!\n"
+        msg = "🚨 <b>ALTERAÇÕES DETECTADAS!</b>\n"
         for p in adicionados:
-            msg += f"🆕 NOVO: {p['nome']}\n{p['url']}\n\n"
+            msg += f"🆕 <b>NOVO:</b> {p['nome']}\n"
+            msg += f"📅 <b>Data:</b> {p['ultima_mod']}\n"
+            if p['descricao']:
+                msg += f"📝 <b>Descrição:</b> {p['descricao']}\n"
+            msg += f"🔗 {p['url']}\n\n"
         for p in removidos:
-            msg += f"❌ REMOVIDO: {p['nome']}\n\n"
+            msg += f"❌ <b>REMOVIDO:</b> {p['nome']}\n\n"
         for p in alterados:
-            msg += f"🔄 ALTERADO: {p['nome']}\n{p['url']}\n\n"
+            msg += f"🔄 <b>ALTERADO:</b> {p['nome']}\n"
+            msg += f"📅 <b>Data:</b> {p['ultima_mod']}\n"
+            if p['descricao']:
+                msg += f"📝 <b>Descrição:</b> {p['descricao']}\n"
+            msg += f"🔗 {p['url']}\n\n"
         enviar_telegram(msg)
 
     with open(HISTORICO, "w") as f:
